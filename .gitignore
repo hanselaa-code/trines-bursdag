@@ -44,5 +44,5 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Firebase config med API-nøkler (skal ikke committes)
+# Firebase config med API-nÃ¸kler (skal ikke committes)
 lib/firebase_config.dart
