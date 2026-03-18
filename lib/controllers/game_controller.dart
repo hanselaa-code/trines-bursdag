@@ -26,6 +26,7 @@ class GameController extends ChangeNotifier {
   int currentQuestionIndex = 0;
   int timerSeconds = 60;
   Timer? _timer;
+  StreamSubscription? _roomSubscription;
 
   List<String> joinedUsers = [];
   int totalTrinePoints = 0;
@@ -41,30 +42,51 @@ class GameController extends ChangeNotifier {
   final FirebaseFirestore db = FirebaseFirestore.instance;
   DocumentReference get roomRef => db.collection('rooms').doc('trines_bursdag');
 
+  String statusMessage = '';
+  bool isLoggingIn = false;
+
   Future<void> login(String name) async {
+    if (name.trim().isEmpty) return;
+    
+    isLoggingIn = true;
+    statusMessage = 'Kobler til Firebase...';
+    notifyListeners();
+
     try {
       currentUserName = name;
       if (name.toLowerCase() == 'admin') {
         currentRole = UserRole.admin;
+        statusMessage = 'Sjekker rom-status (Admin)...';
+        notifyListeners();
         await _initializeRoomIfNeeded().timeout(const Duration(seconds: 10));
       } else if (name.toLowerCase() == 'trine') {
         currentRole = UserRole.trine;
+        statusMessage = 'Bli med som Trine...';
+        notifyListeners();
         await roomRef.set({
           'joinedUsers': FieldValue.arrayUnion([name])
         }, SetOptions(merge: true)).timeout(const Duration(seconds: 10));
       } else {
         currentRole = UserRole.player;
+        statusMessage = 'Bli med som deltaker...';
+        notifyListeners();
         await roomRef.set({
           'joinedUsers': FieldValue.arrayUnion([name])
         }, SetOptions(merge: true)).timeout(const Duration(seconds: 10));
       }
       
+      statusMessage = 'Starter lytting...';
+      notifyListeners();
       _listenToRoom();
+      
+      isLoggingIn = false;
+      statusMessage = '';
       notifyListeners();
     } catch (e) {
+      statusMessage = 'FEIL: ${e.toString()}';
       debugPrint('FEIL VED INNLOGGING: $e');
-      // Tilbakestill brukernavn så man kan prøve igjen
       currentUserName = '';
+      isLoggingIn = false;
       notifyListeners();
     }
   }
@@ -94,37 +116,50 @@ class GameController extends ChangeNotifier {
   }
 
   void _listenToRoom() {
-    roomRef.snapshots().listen((snapshot) {
-      if (snapshot.exists) {
-        var data = snapshot.data() as Map<String, dynamic>;
-        
-        GamePhase newPhase = GamePhase.values.firstWhere(
-            (e) => e.name == data['phase'], orElse: () => GamePhase.waitingRoom);
-        int newQuestionIndex = data['currentQuestionIndex'] ?? 0;
+    _roomSubscription?.cancel();
+    _roomSubscription = roomRef.snapshots().listen(
+      (snapshot) {
+        if (snapshot.exists) {
+          try {
+            var data = snapshot.data() as Map<String, dynamic>;
+            
+            GamePhase newPhase = GamePhase.values.firstWhere(
+                (e) => e.name == data['phase'], orElse: () => GamePhase.waitingRoom);
+            int newQuestionIndex = data['currentQuestionIndex'] ?? 0;
 
-        // Reset local answer status if moving to new question or new phase
-        if (newPhase == GamePhase.playersAnswering && newPhase != currentPhase) {
-          hasAnsweredCurrentQuestion = false;
+            if (newPhase == GamePhase.playersAnswering && newPhase != currentPhase) {
+              hasAnsweredCurrentQuestion = false;
+            }
+            if (newQuestionIndex != currentQuestionIndex) {
+              hasAnsweredCurrentQuestion = false;
+            }
+
+            currentPhase = newPhase;
+            currentQuestionIndex = newQuestionIndex;
+            timerSeconds = data['timerSeconds'] ?? 60;
+            joinedUsers = List<String>.from(data['joinedUsers'] ?? []);
+            totalTrinePoints = data['totalTrinePoints'] ?? 0;
+            totalDeltakerPoints = data['totalDeltakerPoints'] ?? 0;
+            roundOutcomeTrine = data['roundOutcomeTrine'] ?? '';
+            roundOutcomeDeltakere = data['roundOutcomeDeltakere'] ?? '';
+            answersForCurrentQuestion = List<int>.from(data['answersForCurrentQuestion'] ?? [0, 0, 0, 0]);
+            trineSliderAnswer = (data['trineSliderAnswer'] ?? -1).toDouble();
+            deltakerAverageAnswer = (data['deltakerAverageAnswer'] ?? -1).toDouble();
+
+            notifyListeners();
+          } catch (e) {
+            debugPrint('FEIL I STREAM-LISTENER: $e');
+            statusMessage = 'Datafeil: $e';
+            notifyListeners();
+          }
         }
-        if (newQuestionIndex != currentQuestionIndex) {
-          hasAnsweredCurrentQuestion = false;
-        }
-
-        currentPhase = newPhase;
-        currentQuestionIndex = newQuestionIndex;
-        timerSeconds = data['timerSeconds'] ?? 60;
-        joinedUsers = List<String>.from(data['joinedUsers'] ?? []);
-        totalTrinePoints = data['totalTrinePoints'] ?? 0;
-        totalDeltakerPoints = data['totalDeltakerPoints'] ?? 0;
-        roundOutcomeTrine = data['roundOutcomeTrine'] ?? '';
-        roundOutcomeDeltakere = data['roundOutcomeDeltakere'] ?? '';
-        answersForCurrentQuestion = List<int>.from(data['answersForCurrentQuestion'] ?? [0, 0, 0, 0]);
-        trineSliderAnswer = (data['trineSliderAnswer'] ?? -1).toDouble();
-        deltakerAverageAnswer = (data['deltakerAverageAnswer'] ?? -1).toDouble();
-
+      },
+      onError: (e) {
+        debugPrint('STREAM ERROR: $e');
+        statusMessage = 'Tilkoblingsfeil: $e';
         notifyListeners();
       }
-    });
+    );
   }
 
   Future<void> startQuiz() async {
