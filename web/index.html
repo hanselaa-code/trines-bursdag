@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Trines Bursdag Quiz">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Trines Bursdag">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Trines Bursdag Quiz 🎉</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <!-- Firebase SDK (compat version for Flutter Web) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script>
+    // Firebase-konfigurasjon (samme som i main.dart)
+    const firebaseConfig = {
+      apiKey: "AIzaSyBbtaKdomV4nrlupconqt1c0aSQxLt_G-I",
+      authDomain: "trines-gebursdag.firebaseapp.com",
+      projectId: "trines-gebursdag",
+      storageBucket: "trines-gebursdag.firebasestorage.app",
+      messagingSenderId: "1002956475433",
+      appId: "1:1002956475433:web:65a9971b062d4e66e52038",
+      measurementId: "G-3J7LNVTYKC"
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
