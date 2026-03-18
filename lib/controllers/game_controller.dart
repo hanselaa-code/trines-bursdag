@@ -42,40 +42,54 @@ class GameController extends ChangeNotifier {
   DocumentReference get roomRef => db.collection('rooms').doc('trines_bursdag');
 
   Future<void> login(String name) async {
-    currentUserName = name;
-    if (name.toLowerCase() == 'admin') {
-      currentRole = UserRole.admin;
-      await _initializeRoomIfNeeded();
-    } else if (name.toLowerCase() == 'trine') {
-      currentRole = UserRole.trine;
-      await roomRef.set({
-        'joinedUsers': FieldValue.arrayUnion([name])
-      }, SetOptions(merge: true));
-    } else {
-      currentRole = UserRole.player;
-      await roomRef.set({
-        'joinedUsers': FieldValue.arrayUnion([name])
-      }, SetOptions(merge: true));
+    try {
+      currentUserName = name;
+      if (name.toLowerCase() == 'admin') {
+        currentRole = UserRole.admin;
+        await _initializeRoomIfNeeded().timeout(const Duration(seconds: 10));
+      } else if (name.toLowerCase() == 'trine') {
+        currentRole = UserRole.trine;
+        await roomRef.set({
+          'joinedUsers': FieldValue.arrayUnion([name])
+        }, SetOptions(merge: true)).timeout(const Duration(seconds: 10));
+      } else {
+        currentRole = UserRole.player;
+        await roomRef.set({
+          'joinedUsers': FieldValue.arrayUnion([name])
+        }, SetOptions(merge: true)).timeout(const Duration(seconds: 10));
+      }
+      
+      _listenToRoom();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('FEIL VED INNLOGGING: $e');
+      // Tilbakestill brukernavn så man kan prøve igjen
+      currentUserName = '';
+      notifyListeners();
     }
-    
-    _listenToRoom();
-    notifyListeners();
   }
 
   Future<void> _initializeRoomIfNeeded() async {
-    final snap = await roomRef.get();
-    if (!snap.exists) {
-      await roomRef.set({
-        'phase': GamePhase.waitingRoom.name,
-        'currentQuestionIndex': 0,
-        'timerSeconds': 60,
-        'joinedUsers': [],
-        'totalTrinePoints': 0,
-        'totalDeltakerPoints': 0,
-        'roundOutcomeTrine': '',
-        'roundOutcomeDeltakere': '',
-        'answersForCurrentQuestion': [0, 0, 0, 0],
-      });
+    try {
+      final snap = await roomRef.get().timeout(const Duration(seconds: 10));
+      if (!snap.exists) {
+        await roomRef.set({
+          'phase': GamePhase.waitingRoom.name,
+          'currentQuestionIndex': 0,
+          'timerSeconds': 60,
+          'joinedUsers': [],
+          'totalTrinePoints': 0,
+          'totalDeltakerPoints': 0,
+          'roundOutcomeTrine': '',
+          'roundOutcomeDeltakere': '',
+          'answersForCurrentQuestion': [0, 0, 0, 0],
+          'trineSliderAnswer': -1,
+          'deltakerAverageAnswer': -1,
+        }).timeout(const Duration(seconds: 10));
+      }
+    } catch (e) {
+      debugPrint('FEIL VED INITIALISERING AV ROM: $e');
+      rethrow; 
     }
   }
 
