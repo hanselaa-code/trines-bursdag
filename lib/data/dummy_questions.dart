@@ -3,12 +3,12 @@ import '../models/question.dart';
 final List<Question> dummyQuestions = [
   Question(
     id: '1',
-    text: 'Hvor mange år er dette siden?',
+    text: 'Hvilken dato var denne kvelden?',
     type: QuestionType.slider,
-    imageUrl: 'assets/20170624_180346.jpg', 
-    minSlider: 0,
-    maxSlider: 20,
-    correctNumber: 9, 
+    imageUrl: 'assets/dato_kvelden.jpg',
+    minSlider: 1,
+    maxSlider: 28,
+    correctNumber: 7, // 7. februar
   ),
   Question(
     id: '2',

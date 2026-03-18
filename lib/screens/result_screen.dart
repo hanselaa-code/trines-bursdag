@@ -59,8 +59,8 @@ class ResultScreen extends StatelessWidget {
                        ),
                        icon: const Icon(Icons.refresh),
                        label: const Text('Start på nytt (Admin)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                       onPressed: () {
-                          // Implementer reset-logikk her, eller be systemet reloade siden
+                       onPressed: () async {
+                          await controller.resetQuiz();
                        },
                      ),
                 ],

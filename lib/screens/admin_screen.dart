@@ -1,20 +1,81 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:trines_bursdag/controllers/game_controller.dart';
 import 'package:trines_bursdag/models/question.dart';
 import 'package:trines_bursdag/data/dummy_questions.dart';
 import '../widgets/gradient_bg.dart';
 
-class AdminScreen extends StatelessWidget {
+class AdminScreen extends StatefulWidget {
   final GameController controller;
 
   const AdminScreen({super.key, required this.controller});
 
   @override
+  State<AdminScreen> createState() => _AdminScreenState();
+}
+
+class _AdminScreenState extends State<AdminScreen> {
+  // Slider-avsløring: trinn 0=Trine, 1=Fasit, 2=Deltakere teller opp
+  int _revealStep = 0;
+  double _animatedDeltakerValue = 0;
+  Timer? _countupTimer;
+  String? _lastRevealedQuestionPhase;
+
+  @override
+  void didUpdateWidget(covariant AdminScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final phase = widget.controller.currentPhase;
+    final idx = widget.controller.currentQuestionIndex;
+    final key = '$idx-${phase.name}';
+    // Tilbakestill avsløring når vi går til nytt spørsmål
+    if (key != _lastRevealedQuestionPhase && phase != GamePhase.showingResult) {
+      _revealStep = 0;
+      _countupTimer?.cancel();
+      _lastRevealedQuestionPhase = null;
+    }
+  }
+
+  void _nextRevealStep(Question question) {
+    if (_revealStep < 2) {
+      setState(() => _revealStep++);
+      if (_revealStep == 2) {
+        _startCountup(question);
+      }
+    }
+  }
+
+  void _startCountup(Question question) {
+    double target = widget.controller.deltakerAverageAnswer;
+    if (target < 0) return;
+    _animatedDeltakerValue = question.minSlider;
+    _countupTimer?.cancel();
+    double step = (target - question.minSlider).abs() / 40;
+    if (step < 0.5) step = 0.5;
+    _countupTimer = Timer.periodic(const Duration(milliseconds: 60), (t) {
+      setState(() {
+        if ((_animatedDeltakerValue - target).abs() <= step) {
+          _animatedDeltakerValue = target;
+          t.cancel();
+        } else if (_animatedDeltakerValue < target) {
+          _animatedDeltakerValue += step;
+        } else {
+          _animatedDeltakerValue -= step;
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _countupTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final phase = controller.currentPhase;
-    // Forhindre crash hvis index går out of bounds ved final phase
-    final question = (controller.currentQuestionIndex < dummyQuestions.length) 
-        ? dummyQuestions[controller.currentQuestionIndex] 
+    final phase = widget.controller.currentPhase;
+    final question = (widget.controller.currentQuestionIndex < dummyQuestions.length)
+        ? dummyQuestions[widget.controller.currentQuestionIndex]
         : dummyQuestions.first;
 
     return GradientBackground(
@@ -24,8 +85,8 @@ class AdminScreen extends StatelessWidget {
           backgroundColor: Colors.black45,
           elevation: 0,
         ),
-        body: phase == GamePhase.finalLeaderboard 
-            ? _buildFinalScore() 
+        body: phase == GamePhase.finalLeaderboard
+            ? _buildFinalScore()
             : _buildQuestionScreen(context, phase, question),
       ),
     );
@@ -41,6 +102,7 @@ class AdminScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Fase-banner
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -52,40 +114,42 @@ class AdminScreen extends StatelessWidget {
                   children: [
                     Text('Fase: ${phase.name}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.yellowAccent)),
                     if (phase == GamePhase.playersAnswering)
-                      Text('Tid: ${controller.timerSeconds}s', style: const TextStyle(fontSize: 20, color: Colors.white)),
+                      Text('Tid: ${widget.controller.timerSeconds}s', style: const TextStyle(fontSize: 20, color: Colors.white)),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
-              
+
               if (phase == GamePhase.waitingRoom) ...[
-                 const SizedBox(height: 100),
-                 Center(
+                const SizedBox(height: 100),
+                Center(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-                       backgroundColor: Colors.greenAccent.shade700,
-                       foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+                      backgroundColor: Colors.greenAccent.shade700,
+                      foregroundColor: Colors.white,
                     ),
                     icon: const Icon(Icons.play_arrow, size: 32),
                     label: const Text('Start Quiz (Alle er klare)', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                    onPressed: controller.startQuiz,
+                    onPressed: widget.controller.startQuiz,
                   ),
-                 ),
-                 const SizedBox(height: 100),
+                ),
+                const SizedBox(height: 100),
               ],
-                
+
               if (phase != GamePhase.waitingRoom) ...[
+                // Spørsmålstekst
                 Text(
-                  question.text, 
+                  question.text,
                   style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: Colors.white),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
-                
+
+                // Bilde
                 if (question.imageUrl != null)
                   Container(
-                    height: 250, 
+                    height: 250,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
@@ -93,80 +157,204 @@ class AdminScreen extends StatelessWidget {
                       ],
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: question.imageUrl!.startsWith('http') 
+                    child: question.imageUrl!.startsWith('http')
                         ? Image.network(question.imageUrl!, fit: BoxFit.contain)
                         : Image.asset(question.imageUrl!, fit: BoxFit.contain),
                   ),
                 const SizedBox(height: 32),
 
-                // Hvis det er resultatfase, vis rundens vinnere
+                // Resultatfase
                 if (phase == GamePhase.showingResult) ...[
-                   Container(
-                     padding: const EdgeInsets.all(24),
-                     decoration: BoxDecoration(
-                       color: Colors.deepPurple.shade900.withOpacity(0.8),
-                       borderRadius: BorderRadius.circular(24),
-                       border: Border.all(color: Colors.yellowAccent, width: 2),
-                     ),
-                     child: Column(
-                       children: [
-                         const Text('Rundens Resultat:', style: TextStyle(fontSize: 28, color: Colors.white70, fontWeight: FontWeight.bold)),
-                         const SizedBox(height: 16),
-                         Text(controller.roundOutcomeTrine, style: const TextStyle(fontSize: 24, color: Colors.yellow)),
-                         const SizedBox(height: 8),
-                         Text(controller.roundOutcomeDeltakere, style: const TextStyle(fontSize: 24, color: Colors.greenAccent)),
-                         if (question.type == QuestionType.slider) ...[
-                           const SizedBox(height: 16),
-                           Text('Fasit: ${question.correctNumber.toStringAsFixed(0)}', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                         ]
-                       ],
-                     ),
-                   ),
-                   const SizedBox(height: 24),
-                   if (question.type == QuestionType.choice) _buildGraph(controller, question),
-                ]
-                else ...[
-                   if (question.type == QuestionType.choice) _buildOptionsGrid(question),
-                   if (question.type == QuestionType.slider) 
-                     Container(
-                       padding: const EdgeInsets.all(40),
-                       decoration: BoxDecoration(
-                         color: Colors.white12,
-                         borderRadius: BorderRadius.circular(24)
-                       ),
-                       child: const Center(
-                         child: Text('Gjett tallet på mobilen din!', style: TextStyle(fontSize: 32, fontStyle: FontStyle.italic, color: Colors.white70)),
-                       )
-                     )
+                  if (question.type == QuestionType.slider)
+                    _buildSliderReveal(question)
+                  else ...[
+                    _buildResultBox(),
+                    const SizedBox(height: 24),
+                    _buildGraph(widget.controller, question),
+                  ],
+                ] else ...[
+                  if (question.type == QuestionType.choice) _buildOptionsGrid(question),
+                  if (question.type == QuestionType.slider)
+                    Container(
+                      padding: const EdgeInsets.all(40),
+                      decoration: BoxDecoration(
+                        color: Colors.white12,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: const Center(
+                        child: Text('Gjett datoen på mobilen din! 📅',
+                            style: TextStyle(fontSize: 32, fontStyle: FontStyle.italic, color: Colors.white70)),
+                      ),
+                    ),
                 ],
 
                 const SizedBox(height: 32),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.deepPurple,
+                // Neste-knapp (skjult under slider-avsløringen om vi er midt i reveal)
+                if (!(phase == GamePhase.showingResult && question.type == QuestionType.slider && _revealStep < 2))
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.deepPurple,
+                        ),
+                        onPressed: widget.controller.nextPhase,
+                        icon: const Icon(Icons.skip_next),
+                        label: Text(
+                          phase == GamePhase.playersAnswering
+                              ? 'Avbryt Tidtaker (Gå til Trine)'
+                              : phase == GamePhase.trineAnswering
+                                  ? 'Vis Fasit & Start avsløring'
+                                  : 'Neste Spørsmål',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                      onPressed: controller.nextPhase,
-                      icon: const Icon(Icons.skip_next),
-                      label: Text(
-                        phase == GamePhase.playersAnswering
-                            ? 'Avbryt Tidtaker (Gå til Trine)'
-                            : phase == GamePhase.trineAnswering
-                                ? 'Vis Fasit & Grafer'
-                                : 'Neste Spørsmål',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // --- Trinnvis slider-avsløring ---
+  Widget _buildSliderReveal(Question question) {
+    final trine = widget.controller.trineSliderAnswer;
+    final deltaker = widget.controller.deltakerAverageAnswer;
+    final fasit = question.correctNumber;
+
+    return Column(
+      children: [
+        // Steg 0: Trines svar
+        AnimatedOpacity(
+          opacity: _revealStep >= 0 ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 500),
+          child: _revealCard(
+            emoji: '👑',
+            label: 'Trines svar',
+            value: trine >= 0 ? trine.toStringAsFixed(0) : '?',
+            color: Colors.purple.shade300,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Steg 1: Fasit
+        AnimatedOpacity(
+          opacity: _revealStep >= 1 ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 600),
+          child: _revealCard(
+            emoji: '✅',
+            label: 'Fasit',
+            value: fasit.toStringAsFixed(0),
+            color: Colors.greenAccent,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Steg 2: Deltakernes gjennomsnitt (teller opp)
+        AnimatedOpacity(
+          opacity: _revealStep >= 2 ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 600),
+          child: _revealCard(
+            emoji: '🎯',
+            label: 'Deltakernes snitt',
+            value: _revealStep >= 2 
+                ? _animatedDeltakerValue.toStringAsFixed(1) 
+                : '?',
+            color: Colors.orangeAccent,
+          ),
+        ),
+        const SizedBox(height: 32),
+
+        // Vis vinner og Neste-knapp kun etter alt er avslørt
+        if (_revealStep >= 2 && _animatedDeltakerValue == deltaker) ...[
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.black38,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.yellowAccent, width: 2),
+            ),
+            child: Column(
+              children: [
+                Text(widget.controller.roundOutcomeTrine,
+                    style: const TextStyle(fontSize: 22, color: Colors.yellow), textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                Text(widget.controller.roundOutcomeDeltakere,
+                    style: const TextStyle(fontSize: 22, color: Colors.greenAccent), textAlign: TextAlign.center),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.deepPurple,
+            ),
+            onPressed: widget.controller.nextPhase,
+            icon: const Icon(Icons.skip_next),
+            label: const Text('Neste Spørsmål', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+        ] else if (_revealStep < 2) ...[
+          // Knapp for neste avslørings-steg
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+              backgroundColor: Colors.deepPurpleAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => _nextRevealStep(question),
+            icon: const Icon(Icons.visibility),
+            label: Text(
+              _revealStep == 0 ? 'Vis Fasit ➜' : 'Vis Deltakernes Svar ➜',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _revealCard({required String emoji, required String label, required String value, required Color color}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 32),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color, width: 2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('$emoji  $label', style: TextStyle(fontSize: 24, color: color, fontWeight: FontWeight.bold)),
+          Text(value, style: const TextStyle(fontSize: 48, color: Colors.white, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultBox() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.shade900.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.yellowAccent, width: 2),
+      ),
+      child: Column(
+        children: [
+          const Text('Rundens Resultat:', style: TextStyle(fontSize: 28, color: Colors.white70, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Text(widget.controller.roundOutcomeTrine, style: const TextStyle(fontSize: 24, color: Colors.yellow)),
+          const SizedBox(height: 8),
+          Text(widget.controller.roundOutcomeDeltakere, style: const TextStyle(fontSize: 24, color: Colors.greenAccent)),
+        ],
       ),
     );
   }
@@ -179,10 +367,10 @@ class AdminScreen extends StatelessWidget {
           const Text('Quizen er over!', style: TextStyle(fontSize: 48, color: Colors.white)),
           const SizedBox(height: 24),
           ElevatedButton(
-              style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(24)),
-              onPressed: () => controller.nextPhase(), 
-              child: const Text('Gå til Poengoversikt', style: TextStyle(fontSize: 24)),
-          )
+            style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(24)),
+            onPressed: () => widget.controller.nextPhase(),
+            child: const Text('Gå til Poengoversikt', style: TextStyle(fontSize: 24)),
+          ),
         ],
       ),
     );
@@ -202,7 +390,6 @@ class AdminScreen extends StatelessWidget {
           int count = controller.answersForCurrentQuestion[index];
           bool isCorrect = index == question.correctOptionIndex;
           Color col = _getOptionColor(index);
-          
           return Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -229,26 +416,25 @@ class AdminScreen extends StatelessWidget {
 
   Widget _buildOptionsGrid(Question question) {
     return GridView.builder(
-      shrinkWrap: true, // Forhindrer overflow i ScrollView
+      shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: 5, 
+        childAspectRatio: 5,
       ),
       itemCount: question.options.length,
       itemBuilder: (context, index) {
         IconData getIcon(int idx) {
-          switch(idx) {
-            case 0: return Icons.change_history; 
-            case 1: return Icons.crop_square;    
-            case 2: return Icons.circle;         
-            case 3: return Icons.square_foot;    
+          switch (idx) {
+            case 0: return Icons.change_history;
+            case 1: return Icons.crop_square;
+            case 2: return Icons.circle;
+            case 3: return Icons.square_foot;
             default: return Icons.star;
           }
         }
-
         return Container(
           decoration: BoxDecoration(
             color: _getOptionColor(index),
@@ -264,7 +450,6 @@ class AdminScreen extends StatelessWidget {
                 child: Text(
                   question.options[index],
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                  textAlign: TextAlign.left,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -277,10 +462,10 @@ class AdminScreen extends StatelessWidget {
 
   Color _getOptionColor(int index) {
     const optionColors = [
-      Color(0xFFE21B3C), 
-      Color(0xFF1368CE), 
-      Color(0xFFD89E00), 
-      Color(0xFF26890C), 
+      Color(0xFFE21B3C),
+      Color(0xFF1368CE),
+      Color(0xFFD89E00),
+      Color(0xFF26890C),
     ];
     return optionColors[index % 4];
   }

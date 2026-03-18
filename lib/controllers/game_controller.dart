@@ -34,6 +34,9 @@ class GameController extends ChangeNotifier {
   bool hasAnsweredCurrentQuestion = false;
   String roundOutcomeTrine = '';
   String roundOutcomeDeltakere = '';
+  // Brukt til slider-avsløring på Admin-skjermen:
+  double trineSliderAnswer = -1;
+  double deltakerAverageAnswer = -1;
 
   final FirebaseFirestore db = FirebaseFirestore.instance;
   DocumentReference get roomRef => db.collection('rooms').doc('trines_bursdag');
@@ -102,6 +105,8 @@ class GameController extends ChangeNotifier {
         roundOutcomeTrine = data['roundOutcomeTrine'] ?? '';
         roundOutcomeDeltakere = data['roundOutcomeDeltakere'] ?? '';
         answersForCurrentQuestion = List<int>.from(data['answersForCurrentQuestion'] ?? [0, 0, 0, 0]);
+        trineSliderAnswer = (data['trineSliderAnswer'] ?? -1).toDouble();
+        deltakerAverageAnswer = (data['deltakerAverageAnswer'] ?? -1).toDouble();
 
         notifyListeners();
       }
@@ -140,7 +145,7 @@ class GameController extends ChangeNotifier {
       await roomRef.update({
         'phase': GamePhase.showingResult.name,
       });
-    } else if (currentPhase == GamePhase.showingResult) {
+    } else    if (currentPhase == GamePhase.showingResult) {
       if (currentQuestionIndex < dummyQuestions.length - 1) { 
         await roomRef.update({
           'currentQuestionIndex': currentQuestionIndex + 1,
@@ -149,6 +154,8 @@ class GameController extends ChangeNotifier {
           'roundOutcomeTrine': '',
           'roundOutcomeDeltakere': '',
           'timerSeconds': 60,
+          'trineSliderAnswer': -1,
+          'deltakerAverageAnswer': -1,
         });
         _startTimer();
       } else {
@@ -189,6 +196,11 @@ class GameController extends ChangeNotifier {
       'answer': value,
       'questionIndex': currentQuestionIndex,
     });
+
+    // Lagre Trines svar separat for avsløringen
+    if (currentRole == UserRole.trine) {
+      await roomRef.update({'trineSliderAnswer': value});
+    }
   }
 
   Future<void> _calculateRoundPoints() async {
@@ -241,33 +253,38 @@ class GameController extends ChangeNotifier {
        double trineGuess = playerAnswers.containsKey('Trine') ? (playerAnswers['Trine'] as double) : double.infinity;
        double trineDiff = (trineGuess - correctNum).abs();
        
-       double bestDeltakerDiff = double.infinity;
-       String bestDeltakerName = '';
-       double bestDeltakerGuess = 0;
-       
+       // Beregn GJENNOMSNITTET av deltakernes svar
+       double sumDeltakere = 0;
+       int antallDeltakere = 0;
        for (var d in deltakere) {
          if (playerAnswers.containsKey(d)) {
-            double guess = double.parse(playerAnswers[d].toString());
-            double diff = (guess - correctNum).abs();
-            if (diff < bestDeltakerDiff) {
-               bestDeltakerDiff = diff;
-               bestDeltakerGuess = guess;
-               bestDeltakerName = d;
-            }
+           sumDeltakere += double.parse(playerAnswers[d].toString());
+           antallDeltakere++;
          }
        }
+       double deltakerAverage = antallDeltakere > 0 ? sumDeltakere / antallDeltakere : double.infinity;
+       double deltakerDiff = deltakerAverage != double.infinity ? (deltakerAverage - correctNum).abs() : double.infinity;
        
-       if (trineDiff == double.infinity && bestDeltakerDiff == double.infinity) {
+       // Lagre til Firestore for avsløringen
+       if (deltakerAverage != double.infinity) {
+         await roomRef.update({'deltakerAverageAnswer': deltakerAverage});
+       }
+       
+       if (trineGuess == double.infinity && deltakerAverage == double.infinity) {
           rOutTrine = 'Ingen svarte!';
           rOutDeltaker = 'Ingen svarte!';
-       } else if (trineDiff <= bestDeltakerDiff) {
+       } else if (trineDiff <= deltakerDiff) {
           roundTrineP += 1;
-          rOutTrine = 'Trine var nærmest! (Gjettet ${trineGuess.toStringAsFixed(0)} - Diff: ${trineDiff.toStringAsFixed(0)}) -> +1 poeng';
-          rOutDeltaker = bestDeltakerName.isNotEmpty ? 'Beste deltaker ($bestDeltakerName) bommet med ${bestDeltakerDiff.toStringAsFixed(0)}' : 'Ingen deltakere svarte.';
+          rOutTrine = 'Trine var nærmest! (Gjettet ${trineGuess.toStringAsFixed(0)}) → +1 poeng';
+          rOutDeltaker = deltakerAverage != double.infinity 
+              ? 'Snitt deltakere: ${deltakerAverage.toStringAsFixed(1)} (Diff: ${deltakerDiff.toStringAsFixed(1)})'
+              : 'Ingen deltakere svarte.';
        } else {
           roundDeltakerP += 1;
-          rOutTrine = trineGuess != double.infinity ? 'Trine tapte glideren. (Bommet med ${trineDiff.toStringAsFixed(0)})' : 'Trine svarte ikke.';
-          rOutDeltaker = 'Deltakerne vant! $bestDeltakerName gjettet ${bestDeltakerGuess.toStringAsFixed(0)}. (Diff: ${bestDeltakerDiff.toStringAsFixed(0)}) -> +1 poeng';
+          rOutTrine = trineGuess != double.infinity 
+              ? 'Deltakerne vant! Trine bommet med ${trineDiff.toStringAsFixed(0)}'
+              : 'Trine svarte ikke.';
+          rOutDeltaker = 'Snitt deltakere: ${deltakerAverage.toStringAsFixed(1)} – Nærmest! → +1 poeng';
        }
     }
     
@@ -299,5 +316,33 @@ class GameController extends ChangeNotifier {
 
   void _stopTimer() {
     _timer?.cancel();
+  }
+
+  Future<void> resetQuiz() async {
+    if (currentRole != UserRole.admin) return;
+    
+    // Tilbakestill hoveddokumentet
+    await roomRef.update({
+      'phase': GamePhase.waitingRoom.name,
+      'currentQuestionIndex': 0,
+      'totalTrinePoints': 0,
+      'totalDeltakerPoints': 0,
+      'answersForCurrentQuestion': [0, 0, 0, 0],
+      'roundOutcomeTrine': '',
+      'roundOutcomeDeltakere': '',
+      'timerSeconds': 60,
+      'trineSliderAnswer': -1,
+      'deltakerAverageAnswer': -1,
+    });
+
+    // Slett alle svar fra undersamlingen
+    final answers = await roomRef.collection('answers').get();
+    final batch = db.batch();
+    for (var doc in answers.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+    
+    notifyListeners();
   }
 }
