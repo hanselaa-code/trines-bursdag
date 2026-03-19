@@ -23,7 +23,7 @@ class _QuizScreenState extends State<QuizScreen> {
     final role = widget.controller.currentRole;
     final question = dummyQuestions[widget.controller.currentQuestionIndex];
 
-    if (question.type == QuestionType.slider && !_sliderInitialized) {
+    if (question.type == QuestionType.slider && (!_sliderInitialized || _sliderValue < question.minSlider || _sliderValue > question.maxSlider)) {
       _sliderValue = question.minSlider;
       _sliderInitialized = true;
     } else if (question.type == QuestionType.choice) {

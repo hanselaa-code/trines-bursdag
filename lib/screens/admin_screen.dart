@@ -121,20 +121,30 @@ class _AdminScreenState extends State<AdminScreen> {
               const SizedBox(height: 24),
 
               if (phase == GamePhase.waitingRoom) ...[
-                const SizedBox(height: 100),
+                const SizedBox(height: 50),
                 Center(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-                      backgroundColor: Colors.greenAccent.shade700,
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.play_arrow, size: 32),
-                    label: const Text('Start Quiz (Alle er klare)', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                    onPressed: widget.controller.startQuiz,
+                  child: Column(
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+                          backgroundColor: Colors.greenAccent.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.play_arrow, size: 32),
+                        label: const Text('Start Quiz (Alle er klare)', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                        onPressed: widget.controller.startQuiz,
+                      ),
+                      const SizedBox(height: 24),
+                      TextButton.icon(
+                        onPressed: () => widget.controller.resetQuiz(),
+                        icon: const Icon(Icons.refresh, color: Colors.white60),
+                        label: const Text('Nullstill alt og tøm deltakere', style: TextStyle(color: Colors.white60)),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 100),
+                const SizedBox(height: 50),
               ],
 
               if (phase != GamePhase.waitingRoom) ...[

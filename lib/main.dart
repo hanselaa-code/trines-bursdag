@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_config.dart';
 import 'controllers/game_controller.dart';
 import 'screens/splash_screen.dart';
@@ -12,7 +13,19 @@ import 'screens/result_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: firebaseOptions);
+  try {
+    debugPrint('Initialiserer Firebase...');
+    await Firebase.initializeApp(options: firebaseOptions);
+    debugPrint('Firebase initialisert OK.');
+    
+    // Deaktiver persistens på web for å unngå potensielle IndexedDB-låser
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+    );
+    debugPrint('Firestore settings satt (persistens deaktivert).');
+  } catch (e) {
+    debugPrint('KRITISK FEIL VED START: $e');
+  }
   runApp(const TrinesBursdagApp());
 }
 

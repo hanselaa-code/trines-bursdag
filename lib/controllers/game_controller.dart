@@ -56,19 +56,19 @@ class GameController extends ChangeNotifier {
       currentUserName = name;
       if (name.toLowerCase() == 'admin') {
         currentRole = UserRole.admin;
-        statusMessage = 'Sjekker rom-status (Admin)...';
+        statusMessage = 'Sjekker Firestore (Admin mode)...';
         notifyListeners();
         await _initializeRoomIfNeeded().timeout(const Duration(seconds: 10));
       } else if (name.toLowerCase() == 'trine') {
         currentRole = UserRole.trine;
-        statusMessage = 'Bli med som Trine...';
+        statusMessage = 'Registrerer Trine i Firestore...';
         notifyListeners();
         await roomRef.set({
           'joinedUsers': FieldValue.arrayUnion([name])
         }, SetOptions(merge: true)).timeout(const Duration(seconds: 10));
       } else {
         currentRole = UserRole.player;
-        statusMessage = 'Bli med som deltaker...';
+        statusMessage = 'Registrerer deltaker ($name) i Firestore...';
         notifyListeners();
         await roomRef.set({
           'joinedUsers': FieldValue.arrayUnion([name])
@@ -165,6 +165,12 @@ class GameController extends ChangeNotifier {
   Future<void> startQuiz() async {
     if (currentRole != UserRole.admin) return;
     
+    // Tøm gamle svar fra forrige runde
+    final answers = await roomRef.collection('answers').get();
+    for (var doc in answers.docs) {
+      await doc.reference.delete();
+    }
+
     await roomRef.update({
       'phase': GamePhase.playersAnswering.name,
       'currentQuestionIndex': 0,
@@ -174,6 +180,9 @@ class GameController extends ChangeNotifier {
       'roundOutcomeTrine': '',
       'roundOutcomeDeltakere': '',
       'timerSeconds': 60,
+      'joinedUsers': [], // Valgfritt: Tøm også brukerlista ved start
+      'trineSliderAnswer': -1,
+      'deltakerAverageAnswer': -1,
     });
     
     _startTimer();
@@ -346,18 +355,16 @@ class GameController extends ChangeNotifier {
   }
 
   void _startTimer() {
-    _timer?.cancel();
+    _stopTimer();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (timerSeconds > 0) {
         timerSeconds--;
-        // Only Admin updates the timer in Firestore to keep sync centralized
-        if (currentRole == UserRole.admin) {
-           roomRef.update({'timerSeconds': timerSeconds});
-        }
+        notifyListeners();
       } else {
         _stopTimer();
-        if (currentPhase == GamePhase.playersAnswering && currentRole == UserRole.admin) {
-           nextPhase(); 
+        // Kun gå videre hvis vi faktisk er i en fase som skal ha timer
+        if (currentRole == UserRole.admin && currentPhase == GamePhase.playersAnswering) {
+           nextPhase();
         }
       }
     });
