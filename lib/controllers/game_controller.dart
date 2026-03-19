@@ -134,8 +134,21 @@ class GameController extends ChangeNotifier {
               hasAnsweredCurrentQuestion = false;
             }
 
-            currentPhase = newPhase;
-            currentQuestionIndex = newQuestionIndex;
+            // Admin overstyrer ikke sin egen tilstand med data fra Firestore 
+            // hvis dataene i Firestore er "bakpå" (f.eks. gammel fase).
+            // Men vi oppdaterer likevel tid og poeng.
+            if (currentRole != UserRole.admin) {
+              currentPhase = newPhase;
+              currentQuestionIndex = newQuestionIndex;
+            } else {
+              // Admin oppdaterer kun hvis Firestore faktisk er foran (neste spørsmål)
+              // eller hvis vi er tilbake i waitingRoom (reset).
+              if (newQuestionIndex > currentQuestionIndex || newPhase == GamePhase.waitingRoom) {
+                 currentPhase = newPhase;
+                 currentQuestionIndex = newQuestionIndex;
+              }
+            }
+
             timerSeconds = data['timerSeconds'] ?? 60;
             joinedUsers = List<String>.from(data['joinedUsers'] ?? []);
             totalTrinePoints = data['totalTrinePoints'] ?? 0;
@@ -165,7 +178,21 @@ class GameController extends ChangeNotifier {
   Future<void> startQuiz() async {
     if (currentRole != UserRole.admin) return;
     
-    // Tøm gamle svar fra forrige runde
+    // Oppdater lokalt umiddelbart for å unngå race conditions
+    currentPhase = GamePhase.playersAnswering;
+    currentQuestionIndex = 0;
+    timerSeconds = 60;
+    joinedUsers = [];
+    totalTrinePoints = 0;
+    totalDeltakerPoints = 0;
+    answersForCurrentQuestion = [0, 0, 0, 0];
+    roundOutcomeTrine = '';
+    roundOutcomeDeltakere = '';
+    trineSliderAnswer = -1;
+    deltakerAverageAnswer = -1;
+    notifyListeners();
+
+    // Tøm gamle svar fra Firestore
     final answers = await roomRef.collection('answers').get();
     for (var doc in answers.docs) {
       await doc.reference.delete();
@@ -180,7 +207,7 @@ class GameController extends ChangeNotifier {
       'roundOutcomeTrine': '',
       'roundOutcomeDeltakere': '',
       'timerSeconds': 60,
-      'joinedUsers': [], // Valgfritt: Tøm også brukerlista ved start
+      'joinedUsers': [],
       'trineSliderAnswer': -1,
       'deltakerAverageAnswer': -1,
     });
@@ -193,20 +220,33 @@ class GameController extends ChangeNotifier {
 
     if (currentPhase == GamePhase.playersAnswering) {
       _stopTimer();
+      currentPhase = GamePhase.trineAnswering;
+      notifyListeners();
       await roomRef.update({
         'phase': GamePhase.trineAnswering.name,
       });
     } else if (currentPhase == GamePhase.trineAnswering) {
-       // Stop the timer fully just in case
       _stopTimer();
+      currentPhase = GamePhase.showingResult;
+      notifyListeners();
       await _calculateRoundPoints();
       await roomRef.update({
         'phase': GamePhase.showingResult.name,
       });
-    } else    if (currentPhase == GamePhase.showingResult) {
+    } else if (currentPhase == GamePhase.showingResult) {
       if (currentQuestionIndex < dummyQuestions.length - 1) { 
+        currentQuestionIndex++;
+        currentPhase = GamePhase.playersAnswering;
+        timerSeconds = 60;
+        answersForCurrentQuestion = [0, 0, 0, 0];
+        roundOutcomeTrine = '';
+        roundOutcomeDeltakere = '';
+        trineSliderAnswer = -1;
+        deltakerAverageAnswer = -1;
+        notifyListeners();
+
         await roomRef.update({
-          'currentQuestionIndex': currentQuestionIndex + 1,
+          'currentQuestionIndex': currentQuestionIndex,
           'phase': GamePhase.playersAnswering.name,
           'answersForCurrentQuestion': [0, 0, 0, 0],
           'roundOutcomeTrine': '',
@@ -217,6 +257,8 @@ class GameController extends ChangeNotifier {
         });
         _startTimer();
       } else {
+        currentPhase = GamePhase.finalLeaderboard;
+        notifyListeners();
         await roomRef.update({
           'phase': GamePhase.finalLeaderboard.name,
         });

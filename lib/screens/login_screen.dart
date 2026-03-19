@@ -75,22 +75,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                   ),
                   const SizedBox(height: 24),
-                  if (widget.controller.isLoggingIn) 
-                    const Center(child: CircularProgressIndicator(color: Colors.white)),
-                  if (widget.controller.statusMessage.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16),
-                      child: Text(
-                        widget.controller.statusMessage,
-                        style: TextStyle(
-                          color: widget.controller.statusMessage.contains('FEIL') ? Colors.redAccent : Colors.white70,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  const SizedBox(height: 24),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white, // Hvit knapp for kontrast
@@ -101,13 +85,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    onPressed: widget.controller.isLoggingIn 
-                      ? null 
-                      : () {
-                          if (_nameController.text.trim().isNotEmpty) {
-                            widget.controller.login(_nameController.text.trim());
-                          }
-                        },
+                    onPressed: () {
+                      if (_nameController.text.trim().isNotEmpty) {
+                        widget.controller.login(_nameController.text.trim());
+                      }
+                    },
                     child: const Text('Bli med!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                   ),
                 ],
